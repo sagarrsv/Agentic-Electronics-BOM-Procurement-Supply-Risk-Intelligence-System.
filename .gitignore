@@ -1,0 +1,9 @@
+.env
+my_chatbot.db
+my_ordered_chatbot.db
+chatbot.db
+my_ordered_chatbot.db-shm
+my_ordered_chatbot.db-wal
+.vscode
+__pycache__
+.DS_Store

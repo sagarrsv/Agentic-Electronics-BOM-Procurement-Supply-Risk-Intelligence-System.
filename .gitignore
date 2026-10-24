@@ -7,3 +7,4 @@ my_ordered_chatbot.db-wal
 .vscode
 __pycache__
 .DS_Store
+test_bom_parse.py

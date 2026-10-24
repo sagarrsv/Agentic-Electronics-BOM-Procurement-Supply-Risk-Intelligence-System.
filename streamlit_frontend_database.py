@@ -7,6 +7,10 @@ from langgraph_backend_database import (
     get_thread_titles,
     save_thread_title,
 )
+# BOM parsing and database operations
+from bom import parse_bom
+from bom.save_database import save_bom, get_bom
+from bom.validator import BOMFormatError
 
 import uuid
 
@@ -132,6 +136,67 @@ for thread_id in st.session_state["chat_threads"]:
 
 # ------------------------------------- main ui ----------------------------------------- #
 
+# ------------------------ BOM upload ------------------------ #
+
+st.subheader("BOM Analysis")
+
+# Link the uploaded BOM to the currently selected conversation.
+thread_id = st.session_state["thread_id"]
+
+with st.form(f"bom_upload_{thread_id}"):
+    uploaded_file = st.file_uploader(
+        "Upload BOM file",
+        type=["csv", "xlsx"]
+    )
+    upload_clicked = st.form_submit_button("Process BOM")
+
+if upload_clicked:
+    if uploaded_file is None:
+        st.warning("Please select a BOM file.")
+    else:
+        try:
+            # Parse, normalize, and validate using our Feature 1 code.
+            result = parse_bom(uploaded_file)
+
+            # Persist normalized records and issues in SQLite.
+            save_bom(thread_id, uploaded_file.name, result)
+
+            st.success("BOM uploaded and saved successfully.")
+
+        except BOMFormatError as error:
+            # Expected validation failure, e.g. missing columns.
+            st.error(f"Invalid BOM: {error}")
+
+        except Exception:
+            # Avoid exposing private BOM contents in error messages.
+            st.error("Failed to process or save the BOM.")
+
+
+# ------------------------ BOM summary ------------------------ #
+
+# Load the BOM associated with this conversation, if one exists.
+saved_bom = get_bom(thread_id)
+
+if saved_bom:
+    summary = saved_bom["summary"]
+
+    st.caption(f"Active BOM: {saved_bom['filename']}")
+
+    col1, col2, col3 = st.columns(3)
+
+    col1.metric("Components", summary["rows"])
+    col2.metric("Warnings", summary["warnings"])
+    col3.metric("Errors", summary["errors"])
+
+    # Invalid quantities must be corrected before cost calculations.
+    if summary["errors"] > 0:
+        st.warning(
+            "Some rows contain invalid quantities. "
+            "Quantity-based analysis requires correction."
+        )
+
+st.divider()
+
 for message in st.session_state["message_history"]:
     with st.chat_message(message["role"]):
         if message["role"] == "assistant":
@@ -149,17 +214,77 @@ if user_input:
     with st.chat_message("user"):
         st.text(user_input)
 
-    CONFIG = {"configurable": {"thread_id": st.session_state["thread_id"]}}
+    CONFIG = {
+        "configurable": {"thread_id": st.session_state["thread_id"]},
+        "recursion_limit": 10
+        }
 
+    
     with st.chat_message("assistant"):
-        ai_message = st.write_stream(
-            message_chunk.text
-            for message_chunk, metadata in chatbot.stream(
+
+        # Show activity immediately, even before Gemini returns any text.
+        status = st.status("Thinking...", expanded=False)
+
+        def stream_response():
+            used_bom_tool = False
+
+            # Stream both model text and graph execution updates.
+            events = chatbot.stream(
                 {"messages": [HumanMessage(content=user_input)]},
                 config=CONFIG,
-                stream_mode="messages",
+                stream_mode=["messages", "updates"]
             )
-        )
+
+            for mode, data in events:
+
+                if mode == "updates":
+
+                    # LLM completed a node and requested a BOM tool.
+                    if "chat_node" in data:
+                        response = data["chat_node"]["messages"][-1]
+
+                        if response.tool_calls:
+                            used_bom_tool = True
+                            operations = [
+                                call["args"].get("operation", "unknown")
+                                for call in response.tool_calls
+                            ]
+
+                            status.update(
+                                label=f"Using BOM tool: {', '.join(operations)}",
+                                state="running"
+                            )
+
+                    # The built-in ToolNode finished execution.
+                    if "tools" in data:
+                        status.update(
+                            label="BOM query completed. Preparing answer...",
+                            state="running"
+                        )
+
+                elif mode == "messages":
+                    message_chunk, metadata = data
+
+                    # Only display Gemini's conversational text.
+                    # Tool requests and tool results stay internal.
+                    if metadata.get("langgraph_node") == "chat_node":
+                        if message_chunk.text:
+                            yield message_chunk.text
+
+            # Mark completion after the graph finishes.
+            status.update(
+                label=(
+                    "Answered using BOM tool"
+                    if used_bom_tool
+                    else "Answered without BOM tools"
+                ),
+                state="complete",
+                expanded=False
+            )
+
+        ai_message = st.write_stream(stream_response())
+
+
 
     st.session_state["message_history"].append({"role": "assistant", "content": ai_message})
 

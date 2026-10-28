@@ -8,3 +8,8 @@ my_ordered_chatbot.db-wal
 __pycache__
 .DS_Store
 test_bom_parse.py
+test_mouser.py
+test_phase4a_live.py
+test_mouser_v2.py
+run_phase5.py
+supplier_snapshots

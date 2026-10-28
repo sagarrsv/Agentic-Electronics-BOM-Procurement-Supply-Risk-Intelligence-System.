@@ -1,4 +1,5 @@
 
+
 """Deterministic queries on the BOM attached to a conversation."""
 
 from bom.save_database import get_bom
@@ -42,6 +43,7 @@ def matches(item, search_term):
         category_of(item),
     ]
     values += item.get("manufacturer_candidates", [])
+    values += [p.get("manufacturer") or "" for p in item.get("part_options", [])]
 
     return any(term in value.casefold() for value in values)
 
@@ -53,6 +55,7 @@ def present_item(item):
         "description": item.get("description"),
         "manufacturer_candidates": item.get("manufacturer_candidates", []),
         "mpn_candidates": item.get("mpn_candidates", []),
+        "part_options": item.get("part_options", []),
         "quantity_per_assembly": item.get("quantity_per_assembly"),
     }
 
@@ -89,7 +92,7 @@ def bom_query(operation, thread_id, search_term=None, production_quantity=None):
             "categories": categories
         }
 
-    # 2. Find rows with multiple MPN or manufacturer candidates.
+    # 2. Find rows with multiple listed options or manufacturer candidates.
     if operation == "ambiguities":
         found = [
             item for item in items

@@ -125,6 +125,8 @@ for thread_id in st.session_state["chat_threads"]:
             if isinstance(message, HumanMessage):
                 role = "user"
             elif isinstance(message, AIMessage):
+                if message.tool_calls:
+                    continue
                 role = "assistant"
             else:
                 continue

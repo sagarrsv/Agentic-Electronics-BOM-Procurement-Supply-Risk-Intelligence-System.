@@ -55,7 +55,17 @@ def bom_query_tool(
 
 llm = ChatGoogleGenerativeAI(model = "gemini-3.5-flash-lite")
 
+from langchain_core.messages import SystemMessage
 
+BOM_INSTRUCTIONS = """You are an electronics BOM assistant.
+
+For questions about the uploaded BOM, use bom_query_tool.
+Do not invent BOM entries, MPNs, manufacturers, or quantities.
+
+Base BOM-specific claims on retrieved tool results.
+Distinguish information retrieved from the BOM from
+general electronics knowledge.
+"""
 
 class ChatState(TypedDict):
     messages: Annotated[list[BaseMessage], add_messages]
@@ -66,7 +76,12 @@ llm_with_tools = llm.bind_tools([bom_query_tool])
 
 def chat_node(state: ChatState):
     """Generate an answer or request a BOM query."""
-    response = llm_with_tools.invoke(state["messages"])
+
+    messages = [
+        SystemMessage(content=BOM_INSTRUCTIONS),
+        *state["messages"]
+    ]
+    response = llm_with_tools.invoke(messages)
 
     for call in response.tool_calls:
         print(

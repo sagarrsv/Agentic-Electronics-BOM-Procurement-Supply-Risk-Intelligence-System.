@@ -8,6 +8,7 @@ from tools.sourcing import source_bom, _mpn_key, _positive_int, _decimal
 from tools.mouser_api import get_manufacturers
 from tools.manufacturer_gemini import resolve_supplier_manufacturers, name_key
 from tools.digikey_api import DigiKeyClient
+from langsmith import traceable
 
 
 def same_manufacturer(bom_name, catalog_name, verified=None):
@@ -106,7 +107,7 @@ def _find_digikey(dk, mpn, make, candidates=None, verified=None):
             status = 'manufacturer_mismatch'
     return None, status, candidates
 
-
+@traceable(name="Digikey & Mouser Sourcing", run_type="chain")
 def source_bom_two_suppliers(rows, assemblies, verbose=True, digikey_client=None,
                              mouser_lookup=None, delay_seconds=2.1,
                              manufacturer_resolver=None, progress=None, **mouser_kwargs):

@@ -12,6 +12,8 @@ from bom import parse_bom
 from bom.save_database import save_bom, get_bom
 from tools.procurement_tools import take_live_report, clear_live_report
 from bom.validator import BOMFormatError
+from dotenv import load_dotenv
+load_dotenv()
 
 import uuid
 import pandas as pd

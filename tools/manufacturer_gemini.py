@@ -1,6 +1,7 @@
 """One Gemini call: BOM manufacturer -> Mouser and DigiKey catalog names."""
 import re
 from pydantic import BaseModel
+from langsmith import traceable
 
 
 def name_key(value):
@@ -21,7 +22,7 @@ class ManufacturerResponse(BaseModel):
     mouser_aliases: list[MouserAlias]
     digikey_aliases: list[DigiKeyAlias]
 
-
+@traceable(name="Manufacturer verification llm", run_type="chain")
 def resolve_supplier_manufacturers(bom_names, mouser_official, digikey_options,
                                    model='gemini-3.5-flash-lite', llm=None):
     """Map BOM names to supplier catalog labels; never infer a manufacturer or MPN.

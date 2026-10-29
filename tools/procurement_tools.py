@@ -2,8 +2,12 @@
 from bom.save_database import get_bom
 from tools.sourcing_multi import source_bom_two_suppliers
 from tools.risk import evaluate_report
+from langsmith import traceable
 
-
+@traceable(
+    name="Procurement Pipeline",
+    run_type="chain"
+)
 def sourcing_rows(bom):
     """Fail closed on missing/multiple primary identities. Never auto-pick alternates."""
     if bom is None:

@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from tools.mouser_api import get_manufacturers, search_v2
+from langsmith import traceable
 
 
 def _norm(text: Any) -> str:
@@ -152,7 +153,7 @@ def resolve_manufacturers(names, official_names=None, alias_fn=None, verbose=Fal
             print(f"  {name!r} -> {mapped!r}", flush=True)
     return mapping
 
-
+@traceable(name="Mouser Sourcing", run_type="chain")
 def source_bom(rows, assemblies, lookup=None, delay_seconds=2.1, verbose=False,
                manufacturer_mapping=None, official_names=None, alias_fn=None, progress=None):
     """Check each BOM row against Mouser; never infer approval of suffix variants.

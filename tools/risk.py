@@ -5,6 +5,9 @@ Scores are policy indicators, not empirical failure probabilities.
 """
 from collections import Counter
 import re
+from langsmith import traceable
+
+
 
 SUPPLIERS = ('Mouser', 'DigiKey')
 
@@ -302,7 +305,7 @@ def evaluate_bom_coverage(phase5, evaluated_items):
         ],
     }
 
-
+@traceable(name="Risk Analysis", run_type="chain")
 def evaluate_report(phase5):
     results = [evaluate_item(item) for item in phase5['items']]
     return {'phase': 6, 'method': 'deterministic_v2_evidence_weighted',

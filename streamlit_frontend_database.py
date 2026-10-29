@@ -311,6 +311,11 @@ if user_input:
                                 state="running"
                             )
 
+                    if "scope_reply" in data:
+                        reply = data["scope_reply"]["messages"][-1]
+                        if reply.content:
+                            yield reply.content if isinstance(reply.content, str) else reply.text
+
                     # The procurement explanation is produced by summary_node,
                     # not chat_node. Render the final AIMessage from this node.
                     if "summary_node" in data:
@@ -365,7 +370,7 @@ if user_input:
                 "Replenishment days (provisional)": (r["fastest_documented_replenishment_option"] or {}).get("lead_time_days"),
                 "Risk": r["overall_risk_level"],
             } for r in rows])
-            st.dataframe(table, use_container_width=True, hide_index=True)
+            st.dataframe(table, width='stretch', hide_index=True)
             st.caption("Displayed for this interaction only. Unknown stock is not zero; lead time is not a delivery ETA.")
             # Release references promptly; Streamlit's rendered frontend remains visible.
             del live_report, coverage, rows, table

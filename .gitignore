@@ -13,3 +13,5 @@ test_phase4a_live.py
 test_mouser_v2.py
 run_phase5.py
 supplier_snapshots
+langgraph_backend.py
+streamlit_frontend.py

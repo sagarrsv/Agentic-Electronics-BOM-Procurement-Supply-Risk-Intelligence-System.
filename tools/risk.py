@@ -110,48 +110,48 @@ def evaluate_item(item):
         availability_score = 0
     elif unknown:
         availability = 'coverage_unconfirmed'
-        availability_score = 60
+        availability_score = 30
     elif known_stock > 0:
         availability = 'confirmed_reported_shortage'
         availability_score = 90
     else:
         availability = 'no_confirmed_stock'
-        availability_score = 90
+        availability_score = 70
     if not matched:
         availability = 'no_exact_catalog_match'
-        availability_score = 100
+        availability_score = 70
     lifecycles = [s['lifecycle'] for s in matched]
     if 'obsolete_eol' in lifecycles:
         life = 'obsolete_eol'
         lifecycle_score = 100
     elif 'nrnd' in lifecycles:
         life = 'nrnd'
-        lifecycle_score = 70
+        lifecycle_score = 65
     elif lifecycles and all(v == 'active' for v in lifecycles):
         life = 'active'
         lifecycle_score = 0
     else:
         life = 'unknown_or_mixed'
-        lifecycle_score = 25  # conservative missing-data flag, not proof of risk
+        lifecycle_score = 0  # Unknown status is a data gap, not a lifecycle hazard
     # Replenishment exposure is only scored when enough stock is not confirmed.
     lead_values = [s['lead_time_days'] for s in matched if s['lead_time_days'] is not None]
     if known_stock >= required:
         lead_score, lead_state = 0, 'not_needed_for_in_stock_quantity'
     elif not lead_values:
-        lead_score, lead_state = 35, 'unknown_when_needed'
+        lead_score, lead_state = 20, 'unknown_when_needed'
     else:
         fastest = min(lead_values)
         lead_score = 80 if fastest > 180 else 55 if fastest > 90 else 25
         lead_state = 'replenishment_exposure_not_delivery_eta'
     independent_stocked = [s for s in suppliers if (s['reported_stock'] or 0) > 0]
-    concentration_score = 0 if len(independent_stocked) == 2 else 50 if len(independent_stocked) == 1 else 65
+    concentration_score = 0 if len(independent_stocked) == 2 else 20 if len(independent_stocked) == 1 else 25
     concentration = ('two_suppliers_with_reported_stock' if len(independent_stocked) == 2 else
                      'one_supplier_with_reported_stock' if independent_stocked else 'no_confirmed_stock_supplier')
     # An exact offer with a MOQ over demand is a procurement constraint, not shortage.
     moq_excess = [s['supplier'] for s in matched if s['minimum_documented_moq'] is not None
                   and s['minimum_documented_moq'] > required]
     purchasable = [s for s in matched if s['minimum_documented_moq'] is not None and s['minimum_documented_moq'] <= required]
-    moq_score = 0 if purchasable else 45 if moq_excess else 25
+    moq_score = 0 if purchasable else 35 if moq_excess else 10
     moq_status = 'at_least_one_offer_moq_fits_demand' if purchasable else 'all_known_moq_exceed_demand' if moq_excess else 'moq_unconfirmed'
     unknown_fields = []
     if unknown:
@@ -166,11 +166,12 @@ def evaluate_item(item):
         unknown_fields.append('supplier_api_error')
     if not matched:
         unknown_fields.append('no_exact_part_match')
-    uncertainty_score = min(70, 15 * len(unknown_fields))
+    uncertainty_score = min(25, 10 * len(unknown_fields))
     scores = {'availability': availability_score, 'lifecycle': lifecycle_score,
               'lead_time': lead_score, 'moq': moq_score,
               'supplier_concentration': concentration_score, 'uncertainty': uncertainty_score}
     # Explicit precedence: most severe dimension wins; do not dilute EOL with stocked inventory.
+    # Missing data and one-supplier coverage do not independently force medium/high.
     overall = max(scores.values())
     return {'item_id': item['item_id'], 'manufacturer': item['manufacturer'], 'mpn': item['mpn'],
             'required_quantity': required, 'supplier_assessments': suppliers,
@@ -304,7 +305,7 @@ def evaluate_bom_coverage(phase5, evaluated_items):
 
 def evaluate_report(phase5):
     results = [evaluate_item(item) for item in phase5['items']]
-    return {'phase': 6, 'method': 'deterministic_v1_max_dimension',
+    return {'phase': 6, 'method': 'deterministic_v2_evidence_weighted',
             'checked_at_utc': phase5.get('checked_at_utc'),
             'assemblies': phase5['assemblies'],
             'bom_coverage': evaluate_bom_coverage(phase5, results),
@@ -313,6 +314,6 @@ def evaluate_report(phase5):
             'policy': {'overall': 'max of six dimension scores; thresholds low<30 medium<60 high<90 critical>=90',
                        'stock': 'max per supplier across packaging offers, then add across suppliers; missing stays unknown',
                        'lead_time': 'replenishment exposure only when reported stock does not cover; never shipping ETA',
-                       'lifecycle': 'any EOL/obsolete critical, any NRND high; unknown not active',
+                       'lifecycle': 'any EOL/obsolete critical, any NRND high; unknown is unconfirmed, not a risk event',
                        'substitutions': 'never included'},
             'items': results}

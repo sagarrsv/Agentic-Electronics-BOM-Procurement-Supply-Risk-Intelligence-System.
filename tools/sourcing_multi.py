@@ -109,7 +109,7 @@ def _find_digikey(dk, mpn, make, candidates=None, verified=None):
 
 def source_bom_two_suppliers(rows, assemblies, verbose=True, digikey_client=None,
                              mouser_lookup=None, delay_seconds=2.1,
-                             manufacturer_resolver=None, **mouser_kwargs):
+                             manufacturer_resolver=None, progress=None, **mouser_kwargs):
     """Fetch all original MPNs from both suppliers; preserve supplier-specific facts.
 
     This stage is only data collection. Phase 6 decides coverage/risk; Phase 7
@@ -118,6 +118,8 @@ def source_bom_two_suppliers(rows, assemblies, verbose=True, digikey_client=None
     # DigiKey first: its actual returned labels can be verified in the SAME
     # Gemini call as the Mouser BOM->official manufacturer mapping.
     dk = digikey_client or DigiKeyClient()
+    if progress:
+        progress("digikey_started", total=len(rows))
     dk_cache = {}
     dk_errors = {}
     for row in rows:
@@ -128,6 +130,9 @@ def source_bom_two_suppliers(rows, assemblies, verbose=True, digikey_client=None
                 dk_cache[key] = _digikey_candidates(dk, mpn)
             except Exception as exc:
                 dk_errors[key] = f'{type(exc).__name__}: {exc}'
+
+    if progress:
+        progress("digikey_candidates_ready", completed=len(dk_cache), total=len(rows), errors=len(dk_errors))
 
     def manufacturer_of(product):
         reported = product.get('Manufacturer') or {}
@@ -153,10 +158,15 @@ def source_bom_two_suppliers(rows, assemblies, verbose=True, digikey_client=None
     official = list(passed_official if passed_official is not None else
                     ([str(row.get('MAKE') or row.get('manufacturer') or '').strip()
                       for row in rows] if mouser_lookup is not None else get_manufacturers()))
+    if progress:
+        progress("manufacturer_verification_started", total=len(set(row.get("MAKE") for row in rows)))
     resolver = manufacturer_resolver or resolve_supplier_manufacturers
     aliases, verified, gemini_calls = resolver(
         [str(row.get('MAKE') or row.get('manufacturer') or '').strip() for row in rows],
         official, dk_options)
+    if progress:
+        progress("manufacturer_verified", mapped=sum(bool(v) for v in aliases.values()), total=len(aliases),
+                 digikey_verified=sum(bool(v) for v in verified.values()))
     if verbose:
         print('\n=== MANUFACTURER MAPPING (Mouser) ===', flush=True)
         for name, mapped in aliases.items():
@@ -165,10 +175,15 @@ def source_bom_two_suppliers(rows, assemblies, verbose=True, digikey_client=None
         for make, labels in dk_options.items():
             matches = [label for label in labels if verified.get((make, label))]
             print(f'  {make!r} -> {matches[0] if matches else None!r}', flush=True)
+    if progress:
+        progress("mouser_started", total=len(rows))
     mouser = source_bom(rows, assemblies, lookup=mouser_lookup,
                         delay_seconds=delay_seconds, verbose=verbose,
-                        manufacturer_mapping=aliases, official_names=official,
+                        manufacturer_mapping=aliases, official_names=official, progress=progress,
                         **mouser_kwargs)
+    if progress:
+        progress("mouser_completed", total=len(rows), matched=sum(
+            x.get("selected_offer") is not None for x in mouser["items"]))
     # source_bom skips its built-in Gemini when manufacturer_mapping is supplied.
     mouser['metrics']['gemini_alias_calls'] = gemini_calls
     mouser['metrics']['manufacturer_list_requests'] = int(passed_official is None and mouser_lookup is None)
@@ -224,6 +239,9 @@ def source_bom_two_suppliers(rows, assemblies, verbose=True, digikey_client=None
                 dk_record,
             ],
         })
+    if progress:
+        progress("digikey_verified", total=len(items), matched=sum(
+            x["supplier_results"][1]["lookup_status"] == "matched" for x in items))
     return {
         'assemblies': assemblies, 'items': items,
         'summary': {

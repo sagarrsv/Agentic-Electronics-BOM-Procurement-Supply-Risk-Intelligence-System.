@@ -154,7 +154,7 @@ def resolve_manufacturers(names, official_names=None, alias_fn=None, verbose=Fal
 
 
 def source_bom(rows, assemblies, lookup=None, delay_seconds=2.1, verbose=False,
-               manufacturer_mapping=None, official_names=None, alias_fn=None):
+               manufacturer_mapping=None, official_names=None, alias_fn=None, progress=None):
     """Check each BOM row against Mouser; never infer approval of suffix variants.
 
     `lookup` is an optional one-argument mock used by offline tests.
@@ -256,6 +256,9 @@ def source_bom(rows, assemblies, lookup=None, delay_seconds=2.1, verbose=False,
             results.append({**base, "sourcing_status": "api_error", "selected_offer": None,
                             "catalog_candidates": [], "related_variants": [],
                             "issues": [f"{type(exc).__name__}: {exc}"]})
+
+        if progress:
+            progress("mouser_progress", completed=i, total=len(rows), status=results[-1]["sourcing_status"])
 
     counts = {}
     for item in results:

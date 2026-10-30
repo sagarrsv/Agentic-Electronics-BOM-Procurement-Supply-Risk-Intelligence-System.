@@ -4,6 +4,7 @@ optional pipe-batches are an empirical optimization and must be verified.
 """
 import os
 import requests
+import httpx
 from dotenv import load_dotenv
 load_dotenv()
 BASE = 'https://api.mouser.com/api/v2/search'
@@ -97,3 +98,26 @@ def search_v1(mpn):
 
 # Backward-compatible old name; new resolver calls search_v2 directly.
 search_mouser_v2 = search_v2
+
+
+async def async_search_v2(client: httpx.AsyncClient, manufacturer: str, mpn: str):
+    """Native async equivalent of search_v2, with the same strict response parser."""
+    if not manufacturer or not mpn:
+        raise ValueError("manufacturer and MPN required")
+    payload = {'SearchByPartMfrNameRequest': {
+        'manufacturerName': manufacturer, 'mouserPartNumber': mpn,
+        'partSearchOptions': 'None'}}
+    try:
+        response = await client.post(
+            BASE + '/partnumberandmanufacturer', params={'apiKey': _key()}, json=payload)
+        response.raise_for_status()
+        data = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise MouserAPIError(f"v2 lookup failed: {type(exc).__name__}") from exc
+    errors = data.get('Errors') or []
+    if errors:
+        if all(str(item.get('Code')).lower() == 'notfound' for item in errors):
+            data = {'SearchResults': {'Parts': [], 'NumberOfResult': 0}}
+        else:
+            raise MouserAPIError('Mouser returned an API error')
+    return _parse(data)

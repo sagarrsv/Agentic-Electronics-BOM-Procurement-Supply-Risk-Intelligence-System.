@@ -8,7 +8,6 @@ from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from typing import Any
 from tools.mouser_api import get_manufacturers, search_v2
-from langsmith import traceable
 
 
 def _norm(text: Any) -> str:
@@ -153,9 +152,10 @@ def resolve_manufacturers(names, official_names=None, alias_fn=None, verbose=Fal
             print(f"  {name!r} -> {mapped!r}", flush=True)
     return mapping
 
-@traceable(name="Mouser Sourcing", run_type="chain")
+
 def source_bom(rows, assemblies, lookup=None, delay_seconds=2.1, verbose=False,
-               manufacturer_mapping=None, official_names=None, alias_fn=None, progress=None):
+               manufacturer_mapping=None, official_names=None, alias_fn=None, progress=None,
+               prefetched=None):
     """Check each BOM row against Mouser; never infer approval of suffix variants.
 
     `lookup` is an optional one-argument mock used by offline tests.
@@ -211,12 +211,18 @@ def source_bom(rows, assemblies, lookup=None, delay_seconds=2.1, verbose=False,
         key = (catalog_make, mpn)
         try:
             if key not in cache:
-                if searches and delay_seconds:
+                if searches and delay_seconds and prefetched is None:
                     time.sleep(delay_seconds)
                 searches += 1
                 if verbose:
                     print(f"    -> Mouser v2 [{searches}]: {catalog_make} / {mpn}", flush=True)
-                cache[key] = search_v2(catalog_make, [mpn]) if live else lookup(mpn)
+                if prefetched is not None and key in prefetched:
+                    value = prefetched[key]
+                    if isinstance(value, Exception):
+                        raise value
+                    cache[key] = value
+                else:
+                    cache[key] = search_v2(catalog_make, [mpn]) if live else lookup(mpn)
             elif verbose:
                 print("    -> Reusing earlier lookup", flush=True)
             api = cache[key]
